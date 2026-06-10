@@ -95,22 +95,6 @@ MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
   return this
 }
 
-MQEmitter.prototype.emit = function emit (message, cb) {
-  assert(message)
-
-  cb = cb || noop
-
-  if (this.closed) {
-    return cb(new Error('mqemitter is closed'))
-  }
-
-  if (this.concurrency > 0 && this.current >= this.concurrency) {
-    this._messageQueue.push(message)
-    this._messageCallbacks.push(cb)
-    if (!this._doing) {
-      process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
-      this._released()
-    }
   } else {
     this._do(message, cb)
   }
