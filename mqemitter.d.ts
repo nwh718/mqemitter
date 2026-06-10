@@ -15,9 +15,8 @@ declare namespace mqemitter {
     current: number
     concurrent: number
     on(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
-    emit(message: Message, callback?: (error?: Error) => void): void
-    removeListener(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): void
-    close(callback: () => void): void
+    once(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
+    removeListener(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
   }
 }
 

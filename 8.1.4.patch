@@ -1,0 +1,46 @@
+diff --git a/mqemitter.d.ts b/mqemitter.d.ts
+index 874de6c..18b7250 100644
+--- a/mqemitter.d.ts
++++ b/mqemitter.d.ts
+@@ -15,9 +15,8 @@ declare namespace mqemitter {
+     current: number
+     concurrent: number
+     on(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
+-    emit(message: Message, callback?: (error?: Error) => void): void
+-    removeListener(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): void
+-    close(callback: () => void): void
++    once(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
++    removeListener(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
+   }
+ }
+ 
+diff --git a/mqemitter.js b/mqemitter.js
+index 7d556e8..c76b7c1 100644
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -95,6 +95,25 @@ MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
+   return this
+ }
+ 
++MQEmitter.prototype.once = function once (topic, notify, done) {
++  assert(topic)
++  assert(notify)
++  const that = this
++
++  function wrapper (message, cb) {
++    that._matcher.remove(topic, wrapper)
++    notify(message, cb)
++  }
++
++  this._matcher.add(topic, wrapper)
++
++  if (done) {
++    setImmediate(done)
++  }
++
++  return this
++}
++
+ MQEmitter.prototype.emit = function emit (message, cb) {
+   assert(message)
+ 
