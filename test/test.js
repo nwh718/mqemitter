@@ -175,6 +175,7 @@ test('removeListener inside messageHandler', t => {
   function messageHandler1 (message, cb) {
     t.assert.ok(true, 'messageHandler1 called')
     // removes itself
+    // removes itself
     e.removeListener('hello', messageHandler1)
     cb()
   }
@@ -189,6 +190,3 @@ test('removeListener inside messageHandler', t => {
   e.on('hello', messageHandler2)
 
   e.emit({ topic: 'hello' }, () => {
-    t.assert.ok(true, 'emit callback received')
-  })
-})

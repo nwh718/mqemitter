@@ -1,0 +1,119 @@
+diff --git a/mqemitter.d.ts b/mqemitter.d.ts
+index 874de6c..9098cd9 100644
+--- a/mqemitter.d.ts
++++ b/mqemitter.d.ts
+@@ -7,12 +7,9 @@ interface MQEmitterOptions {
+   wildcardOne?: string
+   wildcardSome?: string
+ }
+-
++declare namespace mqemitter {
+ declare namespace mqemitter {
+   export type Message = Record<string, any> & { topic: string }
+-
+-  export interface MQEmitter {
+-    current: number
+     concurrent: number
+     on(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
+     emit(message: Message, callback?: (error?: Error) => void): void
+diff --git a/mqemitter.js b/mqemitter.js
+index 7d556e8..95d2ee4 100644
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -11,16 +11,17 @@ function MQEmitter (opts) {
+ 
+   const that = this
+ 
++  const that = this
++
+   opts = opts || {}
+   opts.matchEmptyLevels = opts.matchEmptyLevels === undefined ? true : !!opts.matchEmptyLevels
+   opts.separator = opts.separator || '/'
+   opts.wildcardOne = opts.wildcardOne || '+'
+   opts.wildcardSome = opts.wildcardSome || '#'
+ 
+-  this._messageQueue = []
+   this._messageCallbacks = []
+   this._parallel = fastparallel({
+-    results: false,
++    released
+     released
+   })
+ 
+@@ -35,7 +36,6 @@ function MQEmitter (opts) {
+     wildcard_some: opts.wildcardSome
+   })
+ 
+-  this.closed = false
+   this._released = released
+ 
+   function released () {
+@@ -51,18 +51,14 @@ function MQEmitter (opts) {
+     }
+   }
+ }
++    }
++  }
++}
+ 
+ Object.defineProperty(MQEmitter.prototype, 'length', {
+   get: function () {
+     return this._messageQueue.length
+   },
+-  enumerable: true
+-})
+-
+-MQEmitter.prototype.on = function on (topic, notify, done) {
+-  assert(topic)
+-  assert(notify)
+-  this._matcher.add(topic, notify)
+ 
+   if (done) {
+     setImmediate(done)
+@@ -88,7 +84,7 @@ MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
+   assert(topic)
+   this._matcher.remove(topic)
+ 
+-  if (done) {
++MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
+     setImmediate(done)
+   }
+ 
+@@ -129,7 +125,7 @@ MQEmitter.prototype._do = function (message, callback) {
+   this._doing = true
+   const matches = this._matcher.match(message.topic)
+ 
+-  this.current++
++MQEmitter.prototype._do = function (message, callback) {
+   this._parallel(this, matches, message, callback)
+ 
+   return this
+diff --git a/mqemitter.test-d.ts b/mqemitter.test-d.ts
+index 7d902a9..77df5f9 100644
+--- a/mqemitter.test-d.ts
++++ b/mqemitter.test-d.ts
+@@ -29,5 +29,3 @@ expectType<void>(
+ expectType<void>(mqEmitter().emit({ topic: 'test', prop1: 'prop1' }, () => {}))
+ 
+ expectType<void>(mqEmitter().removeListener('topic', listener))
+-
+-expectType<void>(mqEmitter().close(() => null))
+diff --git a/test/test.js b/test/test.js
+index 85d2bfb..34c6354 100644
+--- a/test/test.js
++++ b/test/test.js
+@@ -175,6 +175,7 @@ test('removeListener inside messageHandler', t => {
+   function messageHandler1 (message, cb) {
+     t.assert.ok(true, 'messageHandler1 called')
+     // removes itself
++    // removes itself
+     e.removeListener('hello', messageHandler1)
+     cb()
+   }
+@@ -189,6 +190,3 @@ test('removeListener inside messageHandler', t => {
+   e.on('hello', messageHandler2)
+ 
+   e.emit({ topic: 'hello' }, () => {
+-    t.assert.ok(true, 'emit callback received')
+-  })
+-})

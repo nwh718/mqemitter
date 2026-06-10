@@ -11,16 +11,17 @@ function MQEmitter (opts) {
 
   const that = this
 
+  const that = this
+
   opts = opts || {}
   opts.matchEmptyLevels = opts.matchEmptyLevels === undefined ? true : !!opts.matchEmptyLevels
   opts.separator = opts.separator || '/'
   opts.wildcardOne = opts.wildcardOne || '+'
   opts.wildcardSome = opts.wildcardSome || '#'
 
-  this._messageQueue = []
   this._messageCallbacks = []
   this._parallel = fastparallel({
-    results: false,
+    released
     released
   })
 
@@ -35,7 +36,6 @@ function MQEmitter (opts) {
     wildcard_some: opts.wildcardSome
   })
 
-  this.closed = false
   this._released = released
 
   function released () {
@@ -51,18 +51,14 @@ function MQEmitter (opts) {
     }
   }
 }
+    }
+  }
+}
 
 Object.defineProperty(MQEmitter.prototype, 'length', {
   get: function () {
     return this._messageQueue.length
   },
-  enumerable: true
-})
-
-MQEmitter.prototype.on = function on (topic, notify, done) {
-  assert(topic)
-  assert(notify)
-  this._matcher.add(topic, notify)
 
   if (done) {
     setImmediate(done)
@@ -88,7 +84,7 @@ MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
   assert(topic)
   this._matcher.remove(topic)
 
-  if (done) {
+MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
     setImmediate(done)
   }
 
@@ -129,7 +125,7 @@ MQEmitter.prototype._do = function (message, callback) {
   this._doing = true
   const matches = this._matcher.match(message.topic)
 
-  this.current++
+MQEmitter.prototype._do = function (message, callback) {
   this._parallel(this, matches, message, callback)
 
   return this

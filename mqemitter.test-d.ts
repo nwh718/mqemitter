@@ -29,5 +29,3 @@ expectType<void>(
 expectType<void>(mqEmitter().emit({ topic: 'test', prop1: 'prop1' }, () => {}))
 
 expectType<void>(mqEmitter().removeListener('topic', listener))
-
-expectType<void>(mqEmitter().close(() => null))

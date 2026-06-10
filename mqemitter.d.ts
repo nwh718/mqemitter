@@ -7,12 +7,9 @@ interface MQEmitterOptions {
   wildcardOne?: string
   wildcardSome?: string
 }
-
+declare namespace mqemitter {
 declare namespace mqemitter {
   export type Message = Record<string, any> & { topic: string }
-
-  export interface MQEmitter {
-    current: number
     concurrent: number
     on(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
     emit(message: Message, callback?: (error?: Error) => void): void
