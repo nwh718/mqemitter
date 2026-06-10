@@ -1,0 +1,58 @@
+From 8.5.5 Mon Sep 17 00:00:00 2001
+From: mqemitter <mqemitter@example.com>
+Date: Tue, 10 Jun 2026 00:00:00 +0000
+Subject: [PATCH] fix: correct leak recovery and deduplicate warning in emit
+
+When concurrency > 0 and current >= concurrency but _doing is false,
+the existing code calls _released() which only decrements current by 1.
+This leaves current in an inconsistent state if it was inflated
+(e.g. by manual queue manipulation or a race condition), causing
+current to never return to its true value.
+
+This patch:
+1. Resets current to 0 when a leak is detected (_doing=false but
+   current>=concurrency), since no messages are actually in-flight.
+2. Directly shifts and processes the next queued message instead of
+   relying on the _released() decrement-then-_do-increment dance.
+3. Deduplicates the process.emitWarning so it fires at most once per
+   MQEmitter instance, preventing warning floods on repeated emits.
+
+---
+ mqemitter.js | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/mqemitter.js b/mqemitter.js
+index 1234567..abcdefg 100644
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -23,6 +23,7 @@
+
+   this._messageQueue = []
+   this._messageCallbacks = []
++  this._leakWarned = false
+   this._parallel = fastparallel({
+     results: false,
+     released
+@@ -100,11 +101,14 @@
+     this._messageQueue.push(message)
+     this._messageCallbacks.push(cb)
+     if (!this._doing) {
+-      process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
+-      this._released()
+-    }
+-  } else {
+-    this._do(message, cb)
++      if (!this._leakWarned) {
++        process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
++        this._leakWarned = true
++      }
++      this.current = 0
++      const msg = this._messageQueue.shift()
++      const cbb = this._messageCallbacks.shift()
++      this._do(msg, cbb)
++    }
+   }
+
+   return this
+--
+2.43.0
