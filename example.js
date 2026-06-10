@@ -32,30 +32,16 @@ subscribe('hello', a)
 subscribe('hello', b)
 subscribe('hello', c)
 
+mq.once('hello', function (value, cb) {
+  console.log('once', value)
+  cb()
+})
+
 mq.emit({ topic: 'hello', payload: 'world' })
+mq.emit({ topic: 'hello', payload: 'again' })
 
 a.close()
 b.close()
 c.close()
 
 mq.emit({ topic: 'hello', payload: 'world' })
-
-// const listeners = new Map()
-//
-//
-// const queues = new Map()
-//
-// function subscribe (topic, queue) {
-//   if (listeners.has(topic)) {
-//
-//   }
-//
-//   function callback (err) {
-//
-//     for (var value of queues) {
-//     }
-//   }
-//
-//   listeners.set(topic, callback)
-//   queues.set(topic, [queue])
-// }

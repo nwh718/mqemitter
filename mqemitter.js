@@ -71,22 +71,41 @@ MQEmitter.prototype.on = function on (topic, notify, done) {
   return this
 }
 
-MQEmitter.prototype.removeListener = function removeListener (topic, notify, done) {
+MQEmitter.prototype.once = function once (topic, notify, done) {
   assert(topic)
   assert(notify)
+
   const that = this
-  setImmediate(function () {
-    that._matcher.remove(topic, notify)
-    if (done) {
-      done()
-    }
-  })
+
+  function listener (message, callback) {
+    that.removeListener(topic, listener)
+    notify.call(this, message, callback)
+  }
+
+  this._matcher.add(topic, listener)
+
+  if (done) {
+    setImmediate(done)
+  }
+
   return this
 }
 
-MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
+MQEmitter.prototype.removeListener = function removeListener (topic, notify, done) {
   assert(topic)
-  this._matcher.remove(topic)
+  assert(notify)
+  this._matcher.remove(topic, notify)
+
+  if (done) {
+    setImmediate(done)
+  }
+
+  return this
+}
+
+MQEmitter.prototype.removeAllListeners = function removeAllListeners (topic, done) {
+  assert(topic)
+  this._matcher.clear(topic)
 
   if (done) {
     setImmediate(done)
@@ -97,7 +116,7 @@ MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
 
 MQEmitter.prototype.emit = function emit (message, cb) {
   assert(message)
-
+  assert(message.topic)
   cb = cb || noop
 
   if (this.closed) {
