@@ -9,8 +9,6 @@ function MQEmitter (opts) {
     return new MQEmitter(opts)
   }
 
-  const that = this
-
   opts = opts || {}
   opts.matchEmptyLevels = opts.matchEmptyLevels === undefined ? true : !!opts.matchEmptyLevels
   opts.separator = opts.separator || '/'
@@ -19,9 +17,10 @@ function MQEmitter (opts) {
 
   this._messageQueue = []
   this._messageCallbacks = []
+  this._released = released.bind(this)
   this._parallel = fastparallel({
     results: false,
-    released
+    released: this._released
   })
 
   this.concurrency = opts.concurrency || 0
@@ -36,23 +35,28 @@ function MQEmitter (opts) {
   })
 
   this.closed = false
-  this._released = released
-
-  function released () {
-    that.current--
-
-    const message = that._messageQueue.shift()
-    const callback = that._messageCallbacks.shift()
-
-    if (message) {
-      that._do(message, callback)
-    } else {
-      that._doing = false
-    }
-  }
 }
 
+function DrainableMQEmitter (opts) {
+  if (!(this instanceof DrainableMQEmitter)) {
+    return new DrainableMQEmitter(opts)
+  }
+
+  MQEmitter.call(this, opts)
+  this._drainCallbacks = []
+}
+
+DrainableMQEmitter.prototype = Object.create(MQEmitter.prototype)
+DrainableMQEmitter.prototype.constructor = DrainableMQEmitter
+
 Object.defineProperty(MQEmitter.prototype, 'length', {
+  get: function () {
+    return this._messageQueue.length
+  },
+  enumerable: true
+})
+
+Object.defineProperty(DrainableMQEmitter.prototype, 'queuedCount', {
   get: function () {
     return this._messageQueue.length
   },
@@ -84,7 +88,7 @@ MQEmitter.prototype.removeListener = function removeListener (topic, notify, don
   return this
 }
 
-MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
+MQEmitter.prototype.removeAllListeners = function removeAllListeners (topic, done) {
   assert(topic)
   this._matcher.remove(topic)
 
@@ -125,7 +129,7 @@ MQEmitter.prototype.close = function close (cb) {
   return this
 }
 
-MQEmitter.prototype._do = function (message, callback) {
+MQEmitter.prototype._do = function _do (message, callback) {
   this._doing = true
   const matches = this._matcher.match(message.topic)
 
@@ -135,6 +139,49 @@ MQEmitter.prototype._do = function (message, callback) {
   return this
 }
 
+MQEmitter.prototype._afterReleased = noop
+
+DrainableMQEmitter.prototype.drain = function drain (cb) {
+  assert(cb)
+
+  if (this.queuedCount === 0) {
+    setImmediate(cb)
+  } else {
+    this._drainCallbacks.push(cb)
+  }
+
+  return this
+}
+
+DrainableMQEmitter.prototype._afterReleased = function _afterReleased () {
+  if (this.queuedCount !== 0) {
+    return
+  }
+
+  const callbacks = this._drainCallbacks.splice(0)
+
+  for (const callback of callbacks) {
+    setImmediate(callback)
+  }
+}
+
+function released () {
+  this.current--
+
+  const message = this._messageQueue.shift()
+  const callback = this._messageCallbacks.shift()
+
+  if (message) {
+    this._do(message, callback)
+  } else {
+    this._doing = false
+  }
+
+  this._afterReleased()
+}
+
 function noop () { }
 
 module.exports = MQEmitter
+module.exports.MQEmitter = MQEmitter
+module.exports.DrainableMQEmitter = DrainableMQEmitter

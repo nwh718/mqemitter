@@ -1,0 +1,358 @@
+diff --git a/mqemitter.d.ts b/mqemitter.d.ts
+index 874de6c..c15fb7e 100644
+--- a/mqemitter.d.ts
++++ b/mqemitter.d.ts
+@@ -1,26 +1,50 @@
+ /// <reference types="node" />
+ 
+-interface MQEmitterOptions {
+-  concurrency?: number
+-  matchEmptyLevels?: boolean
+-  separator?: string
+-  wildcardOne?: string
+-  wildcardSome?: string
+-}
+-
+ declare namespace mqemitter {
++  export interface MQEmitterOptions {
++    concurrency?: number
++    matchEmptyLevels?: boolean
++    separator?: string
++    wildcardOne?: string
++    wildcardSome?: string
++  }
++
+   export type Message = Record<string, any> & { topic: string }
++  export type DoneCallback = () => void
++  export type EmitCallback = (error?: Error) => void
++  export type MessageListener<TMessage extends Message = Message> = (message: TMessage, done: DoneCallback) => void
+ 
+   export interface MQEmitter {
+     current: number
+-    concurrent: number
+-    on(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
+-    emit(message: Message, callback?: (error?: Error) => void): void
+-    removeListener(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): void
+-    close(callback: () => void): void
++    concurrency: number
++    readonly length: number
++    on<TMessage extends Message = Message>(topic: string, listener: MessageListener<TMessage>, callback?: DoneCallback): this
++    emit<TMessage extends Message = Message>(message: TMessage, callback?: EmitCallback): this
++    removeListener<TMessage extends Message = Message>(topic: string, listener: MessageListener<TMessage>, callback?: DoneCallback): this
++    removeAllListeners(topic: string, callback?: DoneCallback): this
++    close(callback: DoneCallback): this
++  }
++
++  export interface DrainableMQEmitter extends MQEmitter {
++    readonly queuedCount: number
++    drain(callback: DoneCallback): this
++  }
++
++  export interface DrainableMQEmitterConstructor {
++    new (options?: MQEmitterOptions): DrainableMQEmitter
++    (options?: MQEmitterOptions): DrainableMQEmitter
++    readonly prototype: DrainableMQEmitter
++  }
++
++  export interface MQEmitterConstructor {
++    new (options?: MQEmitterOptions): MQEmitter
++    (options?: MQEmitterOptions): MQEmitter
++    readonly prototype: MQEmitter
++    readonly MQEmitter: MQEmitterConstructor
++    readonly DrainableMQEmitter: DrainableMQEmitterConstructor
+   }
+ }
+ 
+-declare function mqemitter (options?: MQEmitterOptions): mqemitter.MQEmitter
++declare const mqemitter: mqemitter.MQEmitterConstructor
+ 
+ export = mqemitter
+diff --git a/mqemitter.js b/mqemitter.js
+index 7d556e8..35f80dc 100644
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -9,8 +9,6 @@ function MQEmitter (opts) {
+     return new MQEmitter(opts)
+   }
+ 
+-  const that = this
+-
+   opts = opts || {}
+   opts.matchEmptyLevels = opts.matchEmptyLevels === undefined ? true : !!opts.matchEmptyLevels
+   opts.separator = opts.separator || '/'
+@@ -19,9 +17,10 @@ function MQEmitter (opts) {
+ 
+   this._messageQueue = []
+   this._messageCallbacks = []
++  this._released = released.bind(this)
+   this._parallel = fastparallel({
+     results: false,
+-    released
++    released: this._released
+   })
+ 
+   this.concurrency = opts.concurrency || 0
+@@ -36,22 +35,20 @@ function MQEmitter (opts) {
+   })
+ 
+   this.closed = false
+-  this._released = released
+-
+-  function released () {
+-    that.current--
+-
+-    const message = that._messageQueue.shift()
+-    const callback = that._messageCallbacks.shift()
++}
+ 
+-    if (message) {
+-      that._do(message, callback)
+-    } else {
+-      that._doing = false
+-    }
++function DrainableMQEmitter (opts) {
++  if (!(this instanceof DrainableMQEmitter)) {
++    return new DrainableMQEmitter(opts)
+   }
++
++  MQEmitter.call(this, opts)
++  this._drainCallbacks = []
+ }
+ 
++DrainableMQEmitter.prototype = Object.create(MQEmitter.prototype)
++DrainableMQEmitter.prototype.constructor = DrainableMQEmitter
++
+ Object.defineProperty(MQEmitter.prototype, 'length', {
+   get: function () {
+     return this._messageQueue.length
+@@ -59,6 +56,13 @@ Object.defineProperty(MQEmitter.prototype, 'length', {
+   enumerable: true
+ })
+ 
++Object.defineProperty(DrainableMQEmitter.prototype, 'queuedCount', {
++  get: function () {
++    return this._messageQueue.length
++  },
++  enumerable: true
++})
++
+ MQEmitter.prototype.on = function on (topic, notify, done) {
+   assert(topic)
+   assert(notify)
+@@ -84,7 +88,7 @@ MQEmitter.prototype.removeListener = function removeListener (topic, notify, don
+   return this
+ }
+ 
+-MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
++MQEmitter.prototype.removeAllListeners = function removeAllListeners (topic, done) {
+   assert(topic)
+   this._matcher.remove(topic)
+ 
+@@ -125,7 +129,7 @@ MQEmitter.prototype.close = function close (cb) {
+   return this
+ }
+ 
+-MQEmitter.prototype._do = function (message, callback) {
++MQEmitter.prototype._do = function _do (message, callback) {
+   this._doing = true
+   const matches = this._matcher.match(message.topic)
+ 
+@@ -135,6 +139,49 @@ MQEmitter.prototype._do = function (message, callback) {
+   return this
+ }
+ 
++MQEmitter.prototype._afterReleased = noop
++
++DrainableMQEmitter.prototype.drain = function drain (cb) {
++  assert(cb)
++
++  if (this.queuedCount === 0) {
++    setImmediate(cb)
++  } else {
++    this._drainCallbacks.push(cb)
++  }
++
++  return this
++}
++
++DrainableMQEmitter.prototype._afterReleased = function _afterReleased () {
++  if (this.queuedCount !== 0) {
++    return
++  }
++
++  const callbacks = this._drainCallbacks.splice(0)
++
++  for (const callback of callbacks) {
++    setImmediate(callback)
++  }
++}
++
++function released () {
++  this.current--
++
++  const message = this._messageQueue.shift()
++  const callback = this._messageCallbacks.shift()
++
++  if (message) {
++    this._do(message, callback)
++  } else {
++    this._doing = false
++  }
++
++  this._afterReleased()
++}
++
+ function noop () { }
+ 
+ module.exports = MQEmitter
++module.exports.MQEmitter = MQEmitter
++module.exports.DrainableMQEmitter = DrainableMQEmitter
+diff --git a/mqemitter.test-d.ts b/mqemitter.test-d.ts
+index 7d902a9..5a5881d 100644
+--- a/mqemitter.test-d.ts
++++ b/mqemitter.test-d.ts
+@@ -1,6 +1,6 @@
+ import { expectError, expectType } from 'tsd'
+ import mqEmitter from '../mqemitter'
+-import type { Message, MQEmitter } from '../mqemitter'
++import type { DrainableMQEmitter, Message, MQEmitter } from '../mqemitter'
+ 
+ expectType<MQEmitter>(mqEmitter())
+ 
+@@ -22,12 +22,16 @@ expectType<MQEmitter>(mqEmitter().on('topic', listener))
+ 
+ expectError(mqEmitter().emit(null))
+ 
+-expectType<void>(
++expectType<MQEmitter>(
+   mqEmitter().emit({ topic: 'test', prop1: 'prop1', [Symbol.for('me')]: 42 })
+ )
+ 
+-expectType<void>(mqEmitter().emit({ topic: 'test', prop1: 'prop1' }, () => {}))
++expectType<MQEmitter>(mqEmitter().emit({ topic: 'test', prop1: 'prop1' }, () => {}))
++
++expectType<MQEmitter>(mqEmitter().removeListener('topic', listener))
+ 
+-expectType<void>(mqEmitter().removeListener('topic', listener))
++expectType<MQEmitter>(mqEmitter().close(() => null))
+ 
+-expectType<void>(mqEmitter().close(() => null))
++expectType<DrainableMQEmitter>(new mqEmitter.DrainableMQEmitter())
++expectType<number>(new mqEmitter.DrainableMQEmitter().queuedCount)
++expectType<DrainableMQEmitter>(new mqEmitter.DrainableMQEmitter().drain(() => {}))
+diff --git a/test/test.js b/test/test.js
+index 85d2bfb..72daf1f 100644
+--- a/test/test.js
++++ b/test/test.js
+@@ -174,7 +174,6 @@ test('removeListener inside messageHandler', t => {
+ 
+   function messageHandler1 (message, cb) {
+     t.assert.ok(true, 'messageHandler1 called')
+-    // removes itself
+     e.removeListener('hello', messageHandler1)
+     cb()
+   }
+@@ -192,3 +191,33 @@ test('removeListener inside messageHandler', t => {
+     t.assert.ok(true, 'emit callback received')
+   })
+ })
++
++test('drainable emitter drains queued messages', async t => {
++  t.plan(5)
++
++  await new Promise(resolve => {
++    const e = new mq.DrainableMQEmitter({ concurrency: 1 })
++    const received = []
++
++    e.on('hello', (message, cb) => {
++      received.push(message.payload)
++      setTimeout(cb, 10)
++    })
++
++    e.emit({ topic: 'hello', payload: 1 })
++    e.emit({ topic: 'hello', payload: 2 })
++    e.emit({ topic: 'hello', payload: 3 })
++
++    t.assert.equal(e.queuedCount, 2)
++    t.assert.equal(e.length, 2)
++
++    e.drain(() => {
++      t.assert.equal(e.queuedCount, 0)
++      t.assert.deepEqual(received, [1, 2, 3])
++      e.close(() => {
++        t.assert.ok(true, 'closed')
++        resolve()
++      })
++    })
++  })
++})
+diff --git a/test/types/index.ts b/test/types/index.ts
+index 361be92..70c9b01 100644
+--- a/test/types/index.ts
++++ b/test/types/index.ts
+@@ -1,7 +1,7 @@
+ /* eslint no-unused-vars: 0 */
+ /* eslint no-undef: 0 */
+ 
+-import MQEmitter, { Message } from '../../mqemitter'
++import MQEmitter, { DrainableMQEmitter, Message } from '../../mqemitter'
+ 
+ const noop = function () {}
+ 
+@@ -37,10 +37,20 @@ mq.on('hello/+', notify)
+ 
+ mq.emit({ topic: 'hello/world', payload: 'or any other fields', [Symbol.for('me')]: 42 })
+ 
+-mq.emit({ topic: 'hello/world' }, function (err: any) {
++mq.emit({ topic: 'hello/world' }, function (err: Error | undefined) {
+   console.log(err)
+ })
+ 
+ mq.removeListener('hello/+', notify)
+ 
+ mq.close(noop)
++
++const drainableMq: DrainableMQEmitter = new MQEmitter.DrainableMQEmitter({
++  concurrency: 1
++})
++
++drainableMq.on('hello/+', notify)
++drainableMq.emit({ topic: 'hello/world' })
++drainableMq.drain(noop)
++console.log(drainableMq.queuedCount)
++drainableMq.close(noop)
+diff --git a/test/types2/index.ts b/test/types2/index.ts
+index f03ac98..61d90e1 100644
+--- a/test/types2/index.ts
++++ b/test/types2/index.ts
+@@ -1,7 +1,7 @@
+ /* eslint no-unused-vars: 0 */
+ /* eslint no-undef: 0 */
+ 
+-import MQEmitter, { Message } from '../../mqemitter.js'
++import MQEmitter, { DrainableMQEmitter, Message } from '../../mqemitter.js'
+ 
+ const noop = function () {}
+ 
+@@ -37,10 +37,20 @@ mq.on('hello/+', notify)
+ 
+ mq.emit({ topic: 'hello/world', payload: 'or any other fields', [Symbol.for('me')]: 42 })
+ 
+-mq.emit({ topic: 'hello/world' }, function (err: any) {
++mq.emit({ topic: 'hello/world' }, function (err: Error | undefined) {
+   console.log(err)
+ })
+ 
+ mq.removeListener('hello/+', notify)
+ 
+ mq.close(noop)
++
++const drainableMq: DrainableMQEmitter = new MQEmitter.DrainableMQEmitter({
++  concurrency: 1
++})
++
++drainableMq.on('hello/+', notify)
++drainableMq.emit({ topic: 'hello/world' })
++drainableMq.drain(noop)
++console.log(drainableMq.queuedCount)
++drainableMq.close(noop)

@@ -1,7 +1,7 @@
 /* eslint no-unused-vars: 0 */
 /* eslint no-undef: 0 */
 
-import MQEmitter, { Message } from '../../mqemitter'
+import MQEmitter, { DrainableMQEmitter, Message } from '../../mqemitter'
 
 const noop = function () {}
 
@@ -37,10 +37,20 @@ mq.on('hello/+', notify)
 
 mq.emit({ topic: 'hello/world', payload: 'or any other fields', [Symbol.for('me')]: 42 })
 
-mq.emit({ topic: 'hello/world' }, function (err: any) {
+mq.emit({ topic: 'hello/world' }, function (err: Error | undefined) {
   console.log(err)
 })
 
 mq.removeListener('hello/+', notify)
 
 mq.close(noop)
+
+const drainableMq: DrainableMQEmitter = new MQEmitter.DrainableMQEmitter({
+  concurrency: 1
+})
+
+drainableMq.on('hello/+', notify)
+drainableMq.emit({ topic: 'hello/world' })
+drainableMq.drain(noop)
+console.log(drainableMq.queuedCount)
+drainableMq.close(noop)

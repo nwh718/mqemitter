@@ -174,7 +174,6 @@ test('removeListener inside messageHandler', t => {
 
   function messageHandler1 (message, cb) {
     t.assert.ok(true, 'messageHandler1 called')
-    // removes itself
     e.removeListener('hello', messageHandler1)
     cb()
   }
@@ -190,5 +189,35 @@ test('removeListener inside messageHandler', t => {
 
   e.emit({ topic: 'hello' }, () => {
     t.assert.ok(true, 'emit callback received')
+  })
+})
+
+test('drainable emitter drains queued messages', async t => {
+  t.plan(5)
+
+  await new Promise(resolve => {
+    const e = new mq.DrainableMQEmitter({ concurrency: 1 })
+    const received = []
+
+    e.on('hello', (message, cb) => {
+      received.push(message.payload)
+      setTimeout(cb, 10)
+    })
+
+    e.emit({ topic: 'hello', payload: 1 })
+    e.emit({ topic: 'hello', payload: 2 })
+    e.emit({ topic: 'hello', payload: 3 })
+
+    t.assert.equal(e.queuedCount, 2)
+    t.assert.equal(e.length, 2)
+
+    e.drain(() => {
+      t.assert.equal(e.queuedCount, 0)
+      t.assert.deepEqual(received, [1, 2, 3])
+      e.close(() => {
+        t.assert.ok(true, 'closed')
+        resolve()
+      })
+    })
   })
 })

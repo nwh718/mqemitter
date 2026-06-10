@@ -1,26 +1,50 @@
 /// <reference types="node" />
 
-interface MQEmitterOptions {
-  concurrency?: number
-  matchEmptyLevels?: boolean
-  separator?: string
-  wildcardOne?: string
-  wildcardSome?: string
-}
-
 declare namespace mqemitter {
+  export interface MQEmitterOptions {
+    concurrency?: number
+    matchEmptyLevels?: boolean
+    separator?: string
+    wildcardOne?: string
+    wildcardSome?: string
+  }
+
   export type Message = Record<string, any> & { topic: string }
+  export type DoneCallback = () => void
+  export type EmitCallback = (error?: Error) => void
+  export type MessageListener<TMessage extends Message = Message> = (message: TMessage, done: DoneCallback) => void
 
   export interface MQEmitter {
     current: number
-    concurrent: number
-    on(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
-    emit(message: Message, callback?: (error?: Error) => void): void
-    removeListener(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): void
-    close(callback: () => void): void
+    concurrency: number
+    readonly length: number
+    on<TMessage extends Message = Message>(topic: string, listener: MessageListener<TMessage>, callback?: DoneCallback): this
+    emit<TMessage extends Message = Message>(message: TMessage, callback?: EmitCallback): this
+    removeListener<TMessage extends Message = Message>(topic: string, listener: MessageListener<TMessage>, callback?: DoneCallback): this
+    removeAllListeners(topic: string, callback?: DoneCallback): this
+    close(callback: DoneCallback): this
+  }
+
+  export interface DrainableMQEmitter extends MQEmitter {
+    readonly queuedCount: number
+    drain(callback: DoneCallback): this
+  }
+
+  export interface DrainableMQEmitterConstructor {
+    new (options?: MQEmitterOptions): DrainableMQEmitter
+    (options?: MQEmitterOptions): DrainableMQEmitter
+    readonly prototype: DrainableMQEmitter
+  }
+
+  export interface MQEmitterConstructor {
+    new (options?: MQEmitterOptions): MQEmitter
+    (options?: MQEmitterOptions): MQEmitter
+    readonly prototype: MQEmitter
+    readonly MQEmitter: MQEmitterConstructor
+    readonly DrainableMQEmitter: DrainableMQEmitterConstructor
   }
 }
 
-declare function mqemitter (options?: MQEmitterOptions): mqemitter.MQEmitter
+declare const mqemitter: mqemitter.MQEmitterConstructor
 
 export = mqemitter
