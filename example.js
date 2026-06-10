@@ -1,61 +1,44 @@
 'use strict'
 
 const mqemitter = require('.')
-
 const mq = mqemitter()
 
-function subscribe (topic, obj) {
-  mq.on(topic, callback)
-  obj.close = close
+const listeners = new Map()
+const queues = new Map()
 
-  function callback (value, cb) {
-    obj.push(value)
-    cb()
+function subscribe(topic) {
+  const obj = []
+
+  if (!queues.has(topic)) {
+    queues.set(topic, [])
+  }
+  queues.get(topic).push(obj)
+
+  if (!listeners.has(topic)) {
+    function callback(value, cb) {
+      const qs = queues.get(topic)
+      for (const q of qs) {
+        q.push(value)
+      }
+      cb()
+    }
+    listeners.set(topic, callback)
+    mq.on(topic, callback)
   }
 
-  function close () {
-    mq.removeListener(topic, callback)
+  obj.close = function close() {
+    const qs = queues.get(topic)
+    const idx = qs.indexOf(obj)
+    if (idx !== -1) {
+      qs.splice(idx, 1)
+    }
+    if (qs.length === 0) {
+      const cb = listeners.get(topic)
+      mq.removeListener(topic, cb)
+      listeners.delete(topic)
+      queues.delete(topic)
+    }
   }
+
+  return obj
 }
-
-class MyQueue {
-  push (value) {
-    console.log(value)
-  }
-}
-
-const a = new MyQueue()
-const b = new MyQueue()
-const c = new MyQueue()
-
-subscribe('hello', a)
-subscribe('hello', b)
-subscribe('hello', c)
-
-mq.emit({ topic: 'hello', payload: 'world' })
-
-a.close()
-b.close()
-c.close()
-
-mq.emit({ topic: 'hello', payload: 'world' })
-
-// const listeners = new Map()
-//
-//
-// const queues = new Map()
-//
-// function subscribe (topic, queue) {
-//   if (listeners.has(topic)) {
-//
-//   }
-//
-//   function callback (err) {
-//
-//     for (var value of queues) {
-//     }
-//   }
-//
-//   listeners.set(topic, callback)
-//   queues.set(topic, [queue])
-// }
