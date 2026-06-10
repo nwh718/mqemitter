@@ -1,0 +1,62 @@
+diff --git a/mqemitter.js b/mqemitter.js
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -3,6 +3,8 @@
+ const { Qlobber } = require('qlobber')
+ const assert = require('assert')
+ const fastparallel = require('fastparallel')
++
++const MAX_QUEUE_LENGTH = 1000
+ 
+ function MQEmitter (opts) {
+   if (!(this instanceof MQEmitter)) {
+@@ -103,10 +105,14 @@ MQEmitter.prototype.emit = function emit (message, cb) {
+   }
+ 
+   if (this.concurrency > 0 && this.current >= this.concurrency) {
++    if (this._messageQueue.length >= MAX_QUEUE_LENGTH) {
++      return cb(new Error('queue full'))
++    }
++
+     this._messageQueue.push(message)
+     this._messageCallbacks.push(cb)
+     if (!this._doing) {
+       process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
+       this._released()
+     }
+   } else {
+diff --git a/test/test.js b/test/test.js
+--- a/test/test.js
++++ b/test/test.js
+@@ -66,6 +66,29 @@ test('queue released when full', async t => {
+     setTimeout(resolve, 200)
+   })
+ })
++
++test('drop messages when queue is full', async t => {
++  t.plan(5)
++
++  const e = mq({ concurrency: 1 })
++
++  e.current = 1
++  e._doing = true
++
++  for (let i = 0; i < 1000; i++) {
++    e._messageQueue.push({ topic: 'hello', payload: i })
++    e._messageCallbacks.push(() => {})
++  }
++
++  await new Promise(resolve => {
++    e.emit({ topic: 'hello', payload: 'overflow' }, err => {
++      t.assert.equal(err.message, 'queue full')
++      t.assert.equal(e.length, 1000)
++      t.assert.equal(e._messageQueue[e.length - 1].payload, 999)
++      t.assert.equal(e._messageCallbacks.length, 1000)
++      t.assert.equal(e.current, 1)
++      resolve()
++    })
++  })
++})
+ 
+ test('without any listeners and a callback', async t => {
+   const e = mq()

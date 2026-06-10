@@ -67,6 +67,31 @@ test('queue released when full', async t => {
   })
 })
 
+test('drop messages when queue is full', async t => {
+  t.plan(5)
+
+  const e = mq({ concurrency: 1 })
+
+  e.current = 1
+  e._doing = true
+
+  for (let i = 0; i < 1000; i++) {
+    e._messageQueue.push({ topic: 'hello', payload: i })
+    e._messageCallbacks.push(() => {})
+  }
+
+  await new Promise(resolve => {
+    e.emit({ topic: 'hello', payload: 'overflow' }, err => {
+      t.assert.equal(err.message, 'queue full')
+      t.assert.equal(e.length, 1000)
+      t.assert.equal(e._messageQueue[e.length - 1].payload, 999)
+      t.assert.equal(e._messageCallbacks.length, 1000)
+      t.assert.equal(e.current, 1)
+      resolve()
+    })
+  })
+})
+
 test('without any listeners and a callback', async t => {
   const e = mq()
   const expected = {
@@ -174,7 +199,6 @@ test('removeListener inside messageHandler', t => {
 
   function messageHandler1 (message, cb) {
     t.assert.ok(true, 'messageHandler1 called')
-    // removes itself
     e.removeListener('hello', messageHandler1)
     cb()
   }

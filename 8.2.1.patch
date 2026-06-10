@@ -1,0 +1,34 @@
+diff --git a/mqemitter.js b/mqemitter.js
+index f5d1e2a..4f0a7c2 100644
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -24,6 +24,7 @@ function MQEmitter (opts) {
+
+   this.concurrency = opts.concurrency || 0
++  this.queueLimit = opts.queueLimit || 1000
+
+   this.current = 0
+   this._doing = false
+@@ -105,6 +106,9 @@ MQEmitter.prototype.emit = function emit (message, cb) {
+
+   if (this.concurrency > 0 && this.current >= this.concurrency) {
++    if (this._messageQueue.length >= this.queueLimit) {
++      return cb(new Error('queue full'))
++    }
+     this._messageQueue.push(message)
+     this._messageCallbacks.push(cb)
+     if (!this._doing) {
+       process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
+diff --git a/mqemitter.d.ts b/mqemitter.d.ts
+index 3e7a11d..9c0e1a1 100644
+--- a/mqemitter.d.ts
++++ b/mqemitter.d.ts
+@@ -1,6 +1,7 @@
+ /// <reference types="node" />
+
+ interface MQEmitterOptions {
+   concurrency?: number
++  queueLimit?: number
+   matchEmptyLevels?: boolean
+   separator?: string
+   wildcardOne?: string

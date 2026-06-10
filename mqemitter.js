@@ -4,6 +4,8 @@ const { Qlobber } = require('qlobber')
 const assert = require('assert')
 const fastparallel = require('fastparallel')
 
+const MAX_QUEUE_LENGTH = 1000
+
 function MQEmitter (opts) {
   if (!(this instanceof MQEmitter)) {
     return new MQEmitter(opts)
@@ -105,6 +107,10 @@ MQEmitter.prototype.emit = function emit (message, cb) {
   }
 
   if (this.concurrency > 0 && this.current >= this.concurrency) {
+    if (this._messageQueue.length >= MAX_QUEUE_LENGTH) {
+      return cb(new Error('queue full'))
+    }
+
     this._messageQueue.push(message)
     this._messageCallbacks.push(cb)
     if (!this._doing) {
