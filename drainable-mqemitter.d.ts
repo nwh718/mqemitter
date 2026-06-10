@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import mqemitter = require('./mqemitter')
 
 interface DrainableMQEmitterOptions {
@@ -8,18 +10,13 @@ interface DrainableMQEmitterOptions {
   wildcardSome?: string
 }
 
-declare namespace drainable {
+declare namespace drainableMqemitter {
   export interface DrainableMQEmitter extends mqemitter.MQEmitter {
     readonly queuedCount: number
     drain(callback: () => void): this
   }
-
-  export interface DrainableMQEmitterConstructor {
-    new (options?: DrainableMQEmitterOptions): DrainableMQEmitter
-    (options?: DrainableMQEmitterOptions): DrainableMQEmitter
-  }
 }
 
-declare const DrainableMQEmitter: drainable.DrainableMQEmitterConstructor
+declare function drainableMqemitter(options?: DrainableMQEmitterOptions): drainableMqemitter.DrainableMQEmitter
 
-export = DrainableMQEmitter
+export = drainableMqemitter
