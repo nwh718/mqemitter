@@ -1,0 +1,38 @@
+diff --git a/mqemitter.js b/mqemitter.js
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -101,8 +101,13 @@ MQEmitter.prototype.emit = function emit (message, cb) {
+     this._messageCallbacks.push(cb)
+     if (!this._doing) {
+       process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
+-      this._released()
++      const nextMessage = this._messageQueue.shift()
++      const nextCallback = this._messageCallbacks.shift()
++
++      if (nextMessage) {
++        this.current = 0
++        this._do(nextMessage, nextCallback)
++      }
+     }
+   } else {
+     this._do(message, cb)
+diff --git a/test/test.js b/test/test.js
+--- a/test/test.js
++++ b/test/test.js
+@@ -29,7 +29,7 @@ test('queue concurrency', async t => {
+ })
+ 
+ test('queue released when full', async t => {
+-  t.plan(21)
++  t.plan(22)
+ 
+   await new Promise(resolve => {
+     const e = mq({ concurrency: 1 })
+@@ -49,6 +49,7 @@ test('queue released when full', async t => {
+     process.once('warning', warning => {
+       t.assert.equal(warning.message, 'MqEmitter leak detected', 'warning message')
+     })
++    setTimeout(() => t.assert.equal(e.current, 0, 'recovery resets the stale concurrency counter'), 200)
+     setTimeout(resolve, 200)
+   })
+ })
