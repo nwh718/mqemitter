@@ -1,0 +1,25 @@
+diff --git a/mqemitter.js b/mqemitter.js
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -107,10 +107,14 @@ MQEmitter.prototype.emit = function emit (message, cb) {
+   if (this.concurrency > 0 && this.current >= this.concurrency) {
+     this._messageQueue.push(message)
+     this._messageCallbacks.push(cb)
+     if (!this._doing) {
+       process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
+-      this._released()
++      // _doing=false 表示处理链已中断（没有消息正在被 fastparallel 处理），
++      // 此时 current 是一个"假值"——它代表曾经在飞但现在不在处理的消息数。
++      // 直接从队列取出消息并用重置后的 current 开始处理，
++      // 而不是调用 _released()（它会执行无意义的 current-- 然后 _do() 中 current++），
++      // 这样可以防止 current 被历史值污染而最终不归零。
++      const nextMessage = this._messageQueue.shift()
++      const nextCb = this._messageCallbacks.shift()
++      if (nextMessage) {
++        this.current = 0
++        this._do(nextMessage, nextCb)
++      }
+     }
+   } else {
+     this._do(message, cb)
+   }
