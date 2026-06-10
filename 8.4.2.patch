@@ -1,0 +1,102 @@
+diff --git a/example.js b/example.js
+index 833c569..8c03e9c 100644
+--- a/example.js
++++ b/example.js
+@@ -3,59 +3,49 @@
+ const mqemitter = require('.')
+ 
+ const mq = mqemitter()
++const subscriptions = new Map()
++
++function subscribe (topic, queue) {
++  let subscription = subscriptions.get(topic)
++
++  if (!subscription) {
++    const queues = new Set()
++    const callback = function callback (value, cb) {
++      for (const currentQueue of queues) {
++        currentQueue.push(value)
++      }
++      cb()
++    }
++
++    subscription = { callback, queues }
++    subscriptions.set(topic, subscription)
++    mq.on(topic, callback)
++  }
+ 
+-function subscribe (topic, obj) {
+-  mq.on(topic, callback)
+-  obj.close = close
++  subscription.queues.add(queue)
++  queue.close = close
+ 
+-  function callback (value, cb) {
+-    obj.push(value)
+-    cb()
+-  }
++  return queue
+ 
+   function close () {
+-    mq.removeListener(topic, callback)
+-  }
+-}
++    const currentSubscription = subscriptions.get(topic)
+ 
+-class MyQueue {
+-  push (value) {
+-    console.log(value)
++    if (!currentSubscription) {
++      return
++    }
++
++    currentSubscription.queues.delete(queue)
++
++    if (currentSubscription.queues.size > 0) {
++      return
++    }
++
++    subscriptions.delete(topic)
++    mq.removeListener(topic, currentSubscription.callback)
+   }
+ }
+ 
+-const a = new MyQueue()
+-const b = new MyQueue()
+-const c = new MyQueue()
+-
+-subscribe('hello', a)
+-subscribe('hello', b)
+-subscribe('hello', c)
+-
+-mq.emit({ topic: 'hello', payload: 'world' })
+-
+-a.close()
+-b.close()
+-c.close()
+-
+-mq.emit({ topic: 'hello', payload: 'world' })
+-
+-// const listeners = new Map()
+-//
+-//
+-// const queues = new Map()
+-//
+-// function subscribe (topic, queue) {
+-//   if (listeners.has(topic)) {
+-//
+-//   }
+-//
+-//   function callback (err) {
+-//
+-//     for (var value of queues) {
+-//     }
+-//   }
+-//
+-//   listeners.set(topic, callback)
+-//   queues.set(topic, [queue])
+-// }
++module.exports = {
++  mq,
++  subscribe
++}
