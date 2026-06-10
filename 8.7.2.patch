@@ -1,0 +1,611 @@
+diff --git a/drainable.d.ts b/drainable.d.ts
++++new file mode 100644
++++index 0000000..b610fbf
++++--- /dev/null
+++++++ b/drainable.d.ts
++++@@ -0,0 +1,25 @@
+++++import mqemitter = require('./mqemitter')
+++++
+++++interface DrainableMQEmitterOptions {
+++++  concurrency?: number
+++++  matchEmptyLevels?: boolean
+++++  separator?: string
+++++  wildcardOne?: string
+++++  wildcardSome?: string
+++++}
+++++
+++++declare namespace drainable {
+++++  export interface DrainableMQEmitter extends mqemitter.MQEmitter {
+++++    readonly queuedCount: number
+++++    drain(callback: () => void): this
+++++  }
+++++
+++++  export interface DrainableMQEmitterConstructor {
+++++    new (options?: DrainableMQEmitterOptions): DrainableMQEmitter
+++++    (options?: DrainableMQEmitterOptions): DrainableMQEmitter
+++++  }
+++++}
+++++
+++++declare const DrainableMQEmitter: drainable.DrainableMQEmitterConstructor
+++++
+++++export = DrainableMQEmitter
++++\ No newline at end of file
++++diff --git a/drainable.js b/drainable.js
++++new file mode 100644
++++index 0000000..f99bcb9
++++--- /dev/null
+++++++ b/drainable.js
++++@@ -0,0 +1,64 @@
+++++'use strict'
+++++
+++++const fastparallel = require('fastparallel')
+++++const MQEmitter = require('./mqemitter')
+++++
+++++function DrainableMQEmitter (opts) {
+++++  if (!(this instanceof DrainableMQEmitter)) {
+++++    return new DrainableMQEmitter(opts)
+++++  }
+++++
+++++  MQEmitter.call(this, opts)
+++++
+++++  const that = this
+++++  this._drainCallbacks = []
+++++
+++++  function released () {
+++++    that.current--
+++++
+++++    const message = that._messageQueue.shift()
+++++    const callback = that._messageCallbacks.shift()
+++++
+++++    if (message) {
+++++      that._do(message, callback)
+++++    } else {
+++++      that._doing = false
+++++      that._checkDrain()
+++++    }
+++++  }
+++++
+++++  this._released = released
+++++  this._parallel = fastparallel({
+++++    results: false,
+++++    released
+++++  })
+++++}
+++++
+++++Object.setPrototypeOf(DrainableMQEmitter.prototype, MQEmitter.prototype)
+++++
+++++Object.defineProperty(DrainableMQEmitter.prototype, 'queuedCount', {
+++++  get: function () {
+++++    return this._messageQueue.length
+++++  },
+++++  enumerable: true
+++++})
+++++
+++++DrainableMQEmitter.prototype.drain = function drain (cb) {
+++++  if (this._messageQueue.length === 0 && this.current === 0) {
+++++    setImmediate(cb)
+++++  } else {
+++++    this._drainCallbacks.push(cb)
+++++  }
+++++  return this
+++++}
+++++
+++++DrainableMQEmitter.prototype._checkDrain = function _checkDrain () {
+++++  if (this._messageQueue.length === 0 && this.current === 0 && this._drainCallbacks.length > 0) {
+++++    const callbacks = this._drainCallbacks.splice(0)
+++++    for (const cb of callbacks) {
+++++      setImmediate(cb)
+++++    }
+++++  }
+++++}
+++++
+++++module.exports = DrainableMQEmitter
++++\ No newline at end of file
++++diff --git a/drainable.test-d.ts b/drainable.test-d.ts
++++new file mode 100644
++++index 0000000..58e72ea
++++--- /dev/null
+++++++ b/drainable.test-d.ts
++++@@ -0,0 +1,43 @@
+++++import { expectError, expectType } from 'tsd'
+++++import DrainableMQEmitter from './drainable'
+++++import type { DrainableMQEmitter as DMQE } from './drainable'
+++++import type { Message } from './mqemitter'
+++++
+++++expectType<DMQE>(DrainableMQEmitter())
+++++
+++++expectType<DMQE>(DrainableMQEmitter({ concurrency: 200, matchEmptyLevels: true }))
+++++
+++++expectType<DMQE>(
+++++  DrainableMQEmitter({
+++++    concurrency: 10,
+++++    matchEmptyLevels: true,
+++++    separator: '/',
+++++    wildcardOne: '+',
+++++    wildcardSome: '#',
+++++  })
+++++)
+++++
+++++function listener (message: Message, done: () => void) {}
+++++
+++++expectType<DMQE>(DrainableMQEmitter().on('topic', listener))
+++++expectType<DMQE>(DrainableMQEmitter().on('topic', listener, () => {}))
+++++
+++++expectError(DrainableMQEmitter().emit(null))
+++++
+++++expectType<void>(
+++++  DrainableMQEmitter().emit({ topic: 'test', prop1: 'prop1', [Symbol.for('me')]: 42 })
+++++)
+++++
+++++expectType<void>(DrainableMQEmitter().emit({ topic: 'test', prop1: 'prop1' }, () => {}))
+++++
+++++expectType<void>(DrainableMQEmitter().removeListener('topic', listener))
+++++expectType<void>(DrainableMQEmitter().close(() => null))
+++++
+++++expectType<number>(DrainableMQEmitter().queuedCount)
+++++
+++++expectType<DMQE>(DrainableMQEmitter().drain(() => {}))
+++++
+++++const emitter: DMQE = DrainableMQEmitter({ concurrency: 1 })
+++++emitter.drain(() => {
+++++  console.log('drained')
+++++})
++++\ No newline at end of file
+++diff --git a/drainable.d.ts b/drainable-mqemitter.d.ts
+++similarity index 52%
+++rename from drainable.d.ts
+++rename to drainable-mqemitter.d.ts
+++index b610fbf..39fee75 100644
+++--- a/drainable.d.ts
++++++ b/drainable-mqemitter.d.ts
+++@@ -1,3 +1,5 @@
++++/// <reference types="node" />
++++
+++ import mqemitter = require('./mqemitter')
+++ 
+++ interface DrainableMQEmitterOptions {
+++@@ -8,18 +10,13 @@ interface DrainableMQEmitterOptions {
+++   wildcardSome?: string
+++ }
+++ 
+++-declare namespace drainable {
++++declare namespace drainableMqemitter {
+++   export interface DrainableMQEmitter extends mqemitter.MQEmitter {
+++     readonly queuedCount: number
+++     drain(callback: () => void): this
+++   }
+++-
+++-  export interface DrainableMQEmitterConstructor {
+++-    new (options?: DrainableMQEmitterOptions): DrainableMQEmitter
+++-    (options?: DrainableMQEmitterOptions): DrainableMQEmitter
+++-  }
+++ }
+++ 
+++-declare const DrainableMQEmitter: drainable.DrainableMQEmitterConstructor
++++declare function drainableMqemitter(options?: DrainableMQEmitterOptions): drainableMqemitter.DrainableMQEmitter
+++ 
+++-export = DrainableMQEmitter
+++\ No newline at end of file
++++export = drainableMqemitter
+++diff --git a/drainable-mqemitter.js b/drainable-mqemitter.js
+++new file mode 100644
+++index 0000000..59b126d
+++--- /dev/null
++++++ b/drainable-mqemitter.js
+++@@ -0,0 +1,58 @@
++++'use strict'
++++
++++const MQEmitter = require('./mqemitter')
++++
++++function DrainableMQEmitter(opts) {
++++  if (!(this instanceof DrainableMQEmitter)) {
++++    return new DrainableMQEmitter(opts)
++++  }
++++
++++  MQEmitter.call(this, opts)
++++
++++  this._drainCallbacks = []
++++}
++++
++++DrainableMQEmitter.prototype = Object.create(MQEmitter.prototype)
++++DrainableMQEmitter.prototype.constructor = DrainableMQEmitter
++++
++++Object.defineProperty(DrainableMQEmitter.prototype, 'queuedCount', {
++++  get: function () {
++++    return this._messageQueue.length
++++  },
++++  enumerable: true
++++})
++++
++++DrainableMQEmitter.prototype.emit = function emit(message, cb) {
++++  const that = this
++++  const wrappedCb = function (err) {
++++    if (cb) cb(err)
++++    that._checkDrain()
++++  }
++++  return MQEmitter.prototype.emit.call(this, message, wrappedCb)
++++}
++++
++++DrainableMQEmitter.prototype._checkDrain = function () {
++++  if (this._messageQueue.length === 0 && this.current === 0) {
++++    const drainCallbacks = this._drainCallbacks.splice(0)
++++    for (let i = 0; i < drainCallbacks.length; i++) {
++++      drainCallbacks[i]()
++++    }
++++  }
++++}
++++
++++const originalReleased = MQEmitter.prototype._released
++++DrainableMQEmitter.prototype._released = function () {
++++  originalReleased.call(this)
++++  this._checkDrain()
++++}
++++
++++DrainableMQEmitter.prototype.drain = function drain(cb) {
++++  if (this._messageQueue.length === 0 && this.current === 0) {
++++    setImmediate(cb)
++++  } else {
++++    this._drainCallbacks.push(cb)
++++  }
++++  return this
++++}
++++
++++module.exports = DrainableMQEmitter
+++diff --git a/drainable.js b/drainable.js
+++deleted file mode 100644
+++index f99bcb9..0000000
+++--- a/drainable.js
++++++ /dev/null
+++@@ -1,64 +0,0 @@
+++-'use strict'
+++-
+++-const fastparallel = require('fastparallel')
+++-const MQEmitter = require('./mqemitter')
+++-
+++-function DrainableMQEmitter (opts) {
+++-  if (!(this instanceof DrainableMQEmitter)) {
+++-    return new DrainableMQEmitter(opts)
+++-  }
+++-
+++-  MQEmitter.call(this, opts)
+++-
+++-  const that = this
+++-  this._drainCallbacks = []
+++-
+++-  function released () {
+++-    that.current--
+++-
+++-    const message = that._messageQueue.shift()
+++-    const callback = that._messageCallbacks.shift()
+++-
+++-    if (message) {
+++-      that._do(message, callback)
+++-    } else {
+++-      that._doing = false
+++-      that._checkDrain()
+++-    }
+++-  }
+++-
+++-  this._released = released
+++-  this._parallel = fastparallel({
+++-    results: false,
+++-    released
+++-  })
+++-}
+++-
+++-Object.setPrototypeOf(DrainableMQEmitter.prototype, MQEmitter.prototype)
+++-
+++-Object.defineProperty(DrainableMQEmitter.prototype, 'queuedCount', {
+++-  get: function () {
+++-    return this._messageQueue.length
+++-  },
+++-  enumerable: true
+++-})
+++-
+++-DrainableMQEmitter.prototype.drain = function drain (cb) {
+++-  if (this._messageQueue.length === 0 && this.current === 0) {
+++-    setImmediate(cb)
+++-  } else {
+++-    this._drainCallbacks.push(cb)
+++-  }
+++-  return this
+++-}
+++-
+++-DrainableMQEmitter.prototype._checkDrain = function _checkDrain () {
+++-  if (this._messageQueue.length === 0 && this.current === 0 && this._drainCallbacks.length > 0) {
+++-    const callbacks = this._drainCallbacks.splice(0)
+++-    for (const cb of callbacks) {
+++-      setImmediate(cb)
+++-    }
+++-  }
+++-}
+++-
+++-module.exports = DrainableMQEmitter
+++\ No newline at end of file
+++diff --git a/drainable.test-d.ts b/drainable.test-d.ts
+++deleted file mode 100644
+++index 58e72ea..0000000
+++--- a/drainable.test-d.ts
++++++ /dev/null
+++@@ -1,43 +0,0 @@
+++-import { expectError, expectType } from 'tsd'
+++-import DrainableMQEmitter from './drainable'
+++-import type { DrainableMQEmitter as DMQE } from './drainable'
+++-import type { Message } from './mqemitter'
+++-
+++-expectType<DMQE>(DrainableMQEmitter())
+++-
+++-expectType<DMQE>(DrainableMQEmitter({ concurrency: 200, matchEmptyLevels: true }))
+++-
+++-expectType<DMQE>(
+++-  DrainableMQEmitter({
+++-    concurrency: 10,
+++-    matchEmptyLevels: true,
+++-    separator: '/',
+++-    wildcardOne: '+',
+++-    wildcardSome: '#',
+++-  })
+++-)
+++-
+++-function listener (message: Message, done: () => void) {}
+++-
+++-expectType<DMQE>(DrainableMQEmitter().on('topic', listener))
+++-expectType<DMQE>(DrainableMQEmitter().on('topic', listener, () => {}))
+++-
+++-expectError(DrainableMQEmitter().emit(null))
+++-
+++-expectType<void>(
+++-  DrainableMQEmitter().emit({ topic: 'test', prop1: 'prop1', [Symbol.for('me')]: 42 })
+++-)
+++-
+++-expectType<void>(DrainableMQEmitter().emit({ topic: 'test', prop1: 'prop1' }, () => {}))
+++-
+++-expectType<void>(DrainableMQEmitter().removeListener('topic', listener))
+++-expectType<void>(DrainableMQEmitter().close(() => null))
+++-
+++-expectType<number>(DrainableMQEmitter().queuedCount)
+++-
+++-expectType<DMQE>(DrainableMQEmitter().drain(() => {}))
+++-
+++-const emitter: DMQE = DrainableMQEmitter({ concurrency: 1 })
+++-emitter.drain(() => {
+++-  console.log('drained')
+++-})
+++\ No newline at end of file
++diff --git a/_reproduce.js b/_reproduce.js
++new file mode 100644
++index 0000000..8058136
++--- /dev/null
+++++ b/_reproduce.js
++@@ -0,0 +1,15 @@
+++'use strict'
+++const mq = require('./mqemitter.js')
+++const e = mq()
+++
+++try {
+++  e.emit(null, (err) => console.log('callback got:', err && err.message))
+++} catch (err) {
+++  console.log('THROWN (uncaught):', err.message)
+++}
+++
+++try {
+++  e.emit(undefined, (err) => console.log('callback got:', err && err.message))
+++} catch (err) {
+++  console.log('THROWN (uncaught):', err.message)
+++}
++diff --git a/_verify.js b/_verify.js
++new file mode 100644
++index 0000000..38a0af6
++--- /dev/null
+++++ b/_verify.js
++@@ -0,0 +1,78 @@
+++'use strict'
+++const assert = require('assert')
+++const mq = require('./mqemitter.js')
+++
+++let failed = 0
+++
+++function check (name, fn) {
+++  try {
+++    fn()
+++    console.log('OK ', name)
+++  } catch (err) {
+++    failed++
+++    console.log('FAIL', name, '-', err.message)
+++  }
+++}
+++
+++check('emit(null) with callback does NOT throw and invokes cb with TypeError', () => {
+++  const e = mq()
+++  let thrown = null
+++  let cbErr = null
+++  try {
+++    e.emit(null, (err) => { cbErr = err })
+++  } catch (err) {
+++    thrown = err
+++  }
+++  assert.strictEqual(thrown, null, 'should not throw')
+++  assert.ok(cbErr instanceof TypeError, 'callback should receive TypeError, got: ' + cbErr)
+++})
+++
+++check('emit(undefined) does NOT throw', () => {
+++  const e = mq()
+++  let thrown = null
+++  let cbErr = null
+++  try {
+++    e.emit(undefined, (err) => { cbErr = err })
+++  } catch (err) {
+++    thrown = err
+++  }
+++  assert.strictEqual(thrown, null, 'should not throw')
+++  assert.ok(cbErr instanceof TypeError, 'callback should receive TypeError, got: ' + cbErr)
+++})
+++
+++check('emit(null) without callback does NOT throw', () => {
+++  const e = mq()
+++  let thrown = null
+++  try {
+++    e.emit(null)
+++  } catch (err) {
+++    thrown = err
+++  }
+++  assert.strictEqual(thrown, null, 'should not throw')
+++})
+++
+++check('emit({ topic: "test" }) still works', () => {
+++  const e = mq()
+++  let received = null
+++  e.on('test', (msg, cb) => { received = msg; cb() })
+++  e.emit({ topic: 'test', payload: 'hi' }, (err) => {
+++    assert.strictEqual(err, null)
+++    assert.strictEqual(received.payload, 'hi')
+++  })
+++})
+++
+++check('emit(123) non-object does NOT throw and returns err via cb', () => {
+++  const e = mq()
+++  let thrown = null
+++  let cbErr = null
+++  try {
+++    e.emit(123, (err) => { cbErr = err })
+++  } catch (err) {
+++    thrown = err
+++  }
+++  assert.strictEqual(thrown, null)
+++  assert.ok(cbErr instanceof TypeError)
+++})
+++
+++console.log('\n' + (failed === 0 ? 'All checks passed' : failed + ' check(s) failed'))
+++process.exit(failed === 0 ? 0 : 1)
++diff --git a/mqemitter.js b/mqemitter.js
++index 7d556e8..a2d408b 100644
++--- a/mqemitter.js
+++++ b/mqemitter.js
++@@ -96,10 +96,16 @@ MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
++ }
++ 
++ MQEmitter.prototype.emit = function emit (message, cb) {
++-  assert(message)
++-
++   cb = cb || noop
++ 
+++  if (message === null || message === undefined) {
+++    return cb(new TypeError('message cannot be null or undefined'))
+++  }
+++
+++  if (typeof message !== 'object') {
+++    return cb(new TypeError('message must be an object with a topic property'))
+++  }
+++
++   if (this.closed) {
++     return cb(new Error('mqemitter is closed'))
++   }
++@@ -127,7 +133,9 @@ MQEmitter.prototype.close = function close (cb) {
++ 
++ MQEmitter.prototype._do = function (message, callback) {
++   this._doing = true
++-  const matches = this._matcher.match(message.topic)
+++  const matches = message && message.topic
+++    ? this._matcher.match(message.topic)
+++    : []
++ 
++   this.current++
++   this._parallel(this, matches, message, callback)
+diff --git a/debug-emit-null-validation.md b/debug-emit-null-validation.md
+new file mode 100644
+index 0000000..f7459b0
+--- /dev/null
++++ b/debug-emit-null-validation.md
+@@ -0,0 +1,26 @@
++# [OPEN] emit-null-validation
++
++## 问题
++- `mqemitter.test-d.ts` 第 24-28 行通过 `expectError(emit(null))` 期望类型层面报错。
++- 运行时 `emit(null)` 可能未被正确拦截，导致未捕获异常。
++
++## 假设
++1. `emit` 只校验了参数是否为 `undefined` 或非对象，但遗漏了 `null`，因为 `typeof null === 'object'`。
++2. `emit` 在访问 `message.topic` 前没有统一兜底，导致非法输入可能以同步异常形式泄漏。
++3. `emit` 的参数规范化顺序错误，先做断言再默认回调，导致无回调场景也可能同步抛错。
++4. 现有测试只覆盖类型检查，没有覆盖运行时 `null` 输入，因此缺少回归保护。
++
++## 证据
++- 上游 `mqemitter@7.1.0` 的 `emit` 先执行 `assert(message)`，随后才做 `cb = cb || noop`；这会把 `null` 当作断言失败直接抛出。
++- 本地仓库缺少运行时 `emit(null)` 回归测试，只在 `mqemitter.test-d.ts` 中有类型层面的 `expectError`。
++- 当前执行环境无法正常启动调试命令或测试命令，命令调用被 `bwrap: No permissions to create a new namespace` 阻断，因此无法采集额外运行时日志。
++
++## 修复
++1. 将 `emit` 的回调规范化提前到参数校验之前。
++2. 对 `null` / `undefined` 返回 `TypeError('message cannot be null or undefined')`。
++3. 对非对象参数返回 `TypeError('message must be an object with a topic property')`。
++4. 新增运行时测试，覆盖 `emit(null)` 有回调和无回调两种路径。
++
++## 验证
++- 已通过静态检查确认 `mqemitter.js` 与新增测试语法完整。
++- 已尝试执行 `npm run unit`，但运行环境的 sandbox 限制阻止了实际命令执行。
+diff --git a/mqemitter.js b/mqemitter.js
+index 7d556e8..0996537 100644
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -96,10 +96,16 @@ MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
+ }
+ 
+ MQEmitter.prototype.emit = function emit (message, cb) {
+-  assert(message)
+-
+   cb = cb || noop
+ 
++  if (message === null || message === undefined) {
++    return cb(new TypeError('message cannot be null or undefined'))
++  }
++
++  if (typeof message !== 'object') {
++    return cb(new TypeError('message must be an object with a topic property'))
++  }
++
+   if (this.closed) {
+     return cb(new Error('mqemitter is closed'))
+   }
+diff --git a/test/test.js b/test/test.js
+index 85d2bfb..0038a3d 100644
+--- a/test/test.js
++++ b/test/test.js
+@@ -174,7 +174,6 @@ test('removeListener inside messageHandler', t => {
+ 
+   function messageHandler1 (message, cb) {
+     t.assert.ok(true, 'messageHandler1 called')
+-    // removes itself
+     e.removeListener('hello', messageHandler1)
+     cb()
+   }
+@@ -192,3 +191,30 @@ test('removeListener inside messageHandler', t => {
+     t.assert.ok(true, 'emit callback received')
+   })
+ })
++
++test('emit null with callback returns TypeError', async t => {
++  t.plan(2)
++
++  const e = mq()
++
++  await new Promise(resolve => {
++    e.emit(null, err => {
++      t.assert.ok(err instanceof TypeError)
++      t.assert.equal(err.message, 'message cannot be null or undefined')
++      resolve()
++    })
++  })
++})
++
++test('emit null without callback does not throw', t => {
++  t.plan(1)
++
++  const e = mq()
++
++  try {
++    e.emit(null)
++    t.assert.ok(true, 'no error thrown')
++  } catch (err) {
++    t.fail(err)
++  }
++})

@@ -175,6 +175,7 @@ test('removeListener inside messageHandler', t => {
   function messageHandler1 (message, cb) {
     t.assert.ok(true, 'messageHandler1 called')
     // removes itself
+    // removes itself
     e.removeListener('hello', messageHandler1)
     cb()
   }
@@ -191,4 +192,31 @@ test('removeListener inside messageHandler', t => {
   e.emit({ topic: 'hello' }, () => {
     t.assert.ok(true, 'emit callback received')
   })
+})
+
+test('emit null with callback returns TypeError', async t => {
+  t.plan(2)
+
+  const e = mq()
+
+  await new Promise(resolve => {
+    e.emit(null, err => {
+      t.assert.ok(err instanceof TypeError)
+      t.assert.equal(err.message, 'message cannot be null or undefined')
+      resolve()
+    })
+  })
+})
+
+test('emit null without callback does not throw', t => {
+  t.plan(1)
+
+  const e = mq()
+
+  try {
+    e.emit(null)
+    t.assert.ok(true, 'no error thrown')
+  } catch (err) {
+    t.fail(err)
+  }
 })
