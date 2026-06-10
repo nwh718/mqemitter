@@ -97,7 +97,6 @@ MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
 
 MQEmitter.prototype.emit = function emit (message, cb) {
   assert(message)
-
   cb = cb || noop
 
   if (this.closed) {
@@ -128,7 +127,6 @@ MQEmitter.prototype.close = function close (cb) {
 MQEmitter.prototype._do = function (message, callback) {
   this._doing = true
   const matches = this._matcher.match(message.topic)
-
   this.current++
   this._parallel(this, matches, message, callback)
 
