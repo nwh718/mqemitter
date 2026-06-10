@@ -1,0 +1,23 @@
+diff --git a/mqemitter.js b/mqemitter.js
+index 1234567..abcdefg 100644
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -100,11 +100,16 @@ MQEmitter.prototype.emit = function emit (message, cb) {
+   }
+ 
+   if (this.concurrency > 0 && this.current >= this.concurrency) {
++    // 当队列积压超过 1000 条时，直接丢弃新消息并返回错误
++    if (this._messageQueue.length >= 1000) {
++      return cb(new Error('queue full'))
++    }
++
+     this._messageQueue.push(message)
+     this._messageCallbacks.push(cb)
+     if (!this._doing) {
+-      process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
++      process.emitWarning('MqEmitter leak detected', {
++        detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94'
++      })
+       this._released()
+     }
+   } else {
