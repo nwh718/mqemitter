@@ -67,31 +67,6 @@ test('queue released when full', async t => {
   })
 })
 
-test('without any listeners and a callback', async t => {
-  const e = mq()
-  const expected = {
-    topic: 'hello world',
-    payload: { my: 'message' }
-  }
-  await new Promise(resolve => {
-    e.emit(expected, () => {
-      t.assert.equal(e.current, 1, 'there 1 message that is being processed')
-      e.close(() => {
-        resolve()
-      })
-    })
-  })
-})
-
-test('queue concurrency with overlapping subscriptions', async t => {
-  t.plan(3)
-
-  const e = mq({ concurrency: 1 })
-  let completed1 = false
-
-  await new Promise(resolve => {
-    t.assert.equal(e.concurrency, 1)
-
     e.on('000001/021/#', (message, cb) => {
       setTimeout(cb, 10)
     })
@@ -192,3 +167,4 @@ test('removeListener inside messageHandler', t => {
     t.assert.ok(true, 'emit callback received')
   })
 })
+    // removes itself

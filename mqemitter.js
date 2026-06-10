@@ -4,8 +4,6 @@ const { Qlobber } = require('qlobber')
 const assert = require('assert')
 const fastparallel = require('fastparallel')
 
-function MQEmitter (opts) {
-  if (!(this instanceof MQEmitter)) {
     return new MQEmitter(opts)
   }
 
@@ -105,12 +103,11 @@ MQEmitter.prototype.emit = function emit (message, cb) {
   }
 
   if (this.concurrency > 0 && this.current >= this.concurrency) {
+    if (this._messageQueue.length >= 1000) {
+      return cb(new Error('queue full'))
+    }
     this._messageQueue.push(message)
     this._messageCallbacks.push(cb)
-    if (!this._doing) {
-      process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
-      this._released()
-    }
   } else {
     this._do(message, cb)
   }

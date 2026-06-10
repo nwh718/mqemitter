@@ -1,0 +1,14 @@
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -101,8 +101,11 @@
+   }
+ 
+   if (this.concurrency > 0 && this.current >= this.concurrency) {
++    if (this._messageQueue.length >= 1000) {
++      return cb(new Error('queue full'))
++    }
+     this._messageQueue.push(message)
+     this._messageCallbacks.push(cb)
+   } else {
+     this._do(message, cb)
+   }
