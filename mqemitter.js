@@ -137,4 +137,63 @@ MQEmitter.prototype._do = function (message, callback) {
 
 function noop () { }
 
+function DrainableMQEmitter (opts) {
+  if (!(this instanceof DrainableMQEmitter)) {
+    return new DrainableMQEmitter(opts)
+  }
+
+  MQEmitter.call(this, opts)
+
+  this._drainCallbacks = []
+
+  const that = this
+
+  function released () {
+    that.current--
+
+    const message = that._messageQueue.shift()
+    const callback = that._messageCallbacks.shift()
+
+    if (message) {
+      that._do(message, callback)
+    } else {
+      that._doing = false
+      if (that._drainCallbacks.length > 0) {
+        const callbacks = that._drainCallbacks.splice(0)
+        for (let i = 0; i < callbacks.length; i++) {
+          setImmediate(callbacks[i])
+        }
+      }
+    }
+  }
+
+  this._released = released
+  this._parallel = fastparallel({
+    results: false,
+    released
+  })
+}
+
+DrainableMQEmitter.prototype = Object.create(MQEmitter.prototype)
+DrainableMQEmitter.prototype.constructor = DrainableMQEmitter
+
+Object.defineProperty(DrainableMQEmitter.prototype, 'queuedCount', {
+  get: function () {
+    return this._messageQueue.length
+  },
+  enumerable: true
+})
+
+DrainableMQEmitter.prototype.drain = function drain (cb) {
+  if (cb) {
+    if (this._messageQueue.length === 0 && !this._doing) {
+      setImmediate(cb)
+    } else {
+      this._drainCallbacks.push(cb)
+    }
+  }
+  return this
+}
+
 module.exports = MQEmitter
+module.exports.DrainableMQEmitter = DrainableMQEmitter

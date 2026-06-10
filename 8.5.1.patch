@@ -1,0 +1,163 @@
+diff --git a/example.js b/example.js
+index 833c569..a24cbcb 100644
+--- a/example.js
++++ b/example.js
+@@ -2,55 +2,19 @@
+ 
+ const mqemitter = require('.')
+ 
++
+ const mq = mqemitter()
+ 
+-function subscribe (topic, obj) {
+-  mq.on(topic, callback)
++const b = new MyQueue()
+   obj.close = close
+ 
+   function callback (value, cb) {
+     obj.push(value)
+     cb()
+   }
+-
+-  function close () {
+-    mq.removeListener(topic, callback)
+-  }
+ }
+ 
+-class MyQueue {
+-  push (value) {
+-    console.log(value)
+-  }
+-}
+-
+-const a = new MyQueue()
+-const b = new MyQueue()
+-const c = new MyQueue()
+-
+-subscribe('hello', a)
+-subscribe('hello', b)
+-subscribe('hello', c)
+-
+-mq.emit({ topic: 'hello', payload: 'world' })
+-
+-a.close()
+-b.close()
+-c.close()
+-
+-mq.emit({ topic: 'hello', payload: 'world' })
+-
+-// const listeners = new Map()
+-//
+-//
+-// const queues = new Map()
+-//
+-// function subscribe (topic, queue) {
+-//   if (listeners.has(topic)) {
+-//
+-//   }
+-//
+-//   function callback (err) {
++    mq.removeListener(topic, callback)
+ //
+ //     for (var value of queues) {
+ //     }
+diff --git a/mqemitter.d.ts b/mqemitter.d.ts
+index 874de6c..73ffcc8 100644
+--- a/mqemitter.d.ts
++++ b/mqemitter.d.ts
+@@ -13,14 +13,26 @@ declare namespace mqemitter {
+ 
+   export interface MQEmitter {
+     current: number
+-    concurrent: number
++    concurrency: number
++    length: number
++    closed: boolean
+     on(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
+     emit(message: Message, callback?: (error?: Error) => void): void
+     removeListener(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): void
++    removeAllListeners(topic: string, callback?: () => void): this
+     close(callback: () => void): void
+   }
++
++  export interface DrainableMQEmitter extends MQEmitter {
++    queuedCount: number
++    drain(callback: () => void): this
++  }
+ }
+ 
+ declare function mqemitter (options?: MQEmitterOptions): mqemitter.MQEmitter
+ 
++declare namespace mqemitter {
++  export function DrainableMQEmitter (options?: MQEmitterOptions): mqemitter.DrainableMQEmitter
++}
++
+ export = mqemitter
+diff --git a/mqemitter.js b/mqemitter.js
+index 7d556e8..eb308a3 100644
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -137,4 +137,63 @@ MQEmitter.prototype._do = function (message, callback) {
+ 
+ function noop () { }
+ 
++function DrainableMQEmitter (opts) {
++  if (!(this instanceof DrainableMQEmitter)) {
++    return new DrainableMQEmitter(opts)
++  }
++
++  MQEmitter.call(this, opts)
++
++  this._drainCallbacks = []
++
++  const that = this
++
++  function released () {
++    that.current--
++
++    const message = that._messageQueue.shift()
++    const callback = that._messageCallbacks.shift()
++
++    if (message) {
++      that._do(message, callback)
++    } else {
++      that._doing = false
++      if (that._drainCallbacks.length > 0) {
++        const callbacks = that._drainCallbacks.splice(0)
++        for (let i = 0; i < callbacks.length; i++) {
++          setImmediate(callbacks[i])
++        }
++      }
++    }
++  }
++
++  this._released = released
++  this._parallel = fastparallel({
++    results: false,
++    released
++  })
++}
++
++DrainableMQEmitter.prototype = Object.create(MQEmitter.prototype)
++DrainableMQEmitter.prototype.constructor = DrainableMQEmitter
++
++Object.defineProperty(DrainableMQEmitter.prototype, 'queuedCount', {
++  get: function () {
++    return this._messageQueue.length
++  },
++  enumerable: true
++})
++
++DrainableMQEmitter.prototype.drain = function drain (cb) {
++  if (cb) {
++    if (this._messageQueue.length === 0 && !this._doing) {
++      setImmediate(cb)
++    } else {
++      this._drainCallbacks.push(cb)
++    }
++  }
++  return this
++}
++
+ module.exports = MQEmitter
++module.exports.DrainableMQEmitter = DrainableMQEmitter
