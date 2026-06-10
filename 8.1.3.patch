@@ -1,0 +1,141 @@
+diff --git a/example.js b/example.js
+index 833c569..866df5c 100644
+--- a/example.js
++++ b/example.js
+@@ -32,13 +32,13 @@ subscribe('hello', a)
+ subscribe('hello', b)
+ subscribe('hello', c)
+ 
+-mq.emit({ topic: 'hello', payload: 'world' })
+ 
+-a.close()
+-b.close()
+-c.close()
+ 
+-mq.emit({ topic: 'hello', payload: 'world' })
++// const listeners = new Map()
++//
++//
++// const queues = new Map()
++//
+ 
+ // const listeners = new Map()
+ //
+@@ -59,3 +59,17 @@ mq.emit({ topic: 'hello', payload: 'world' })
+ //   listeners.set(topic, callback)
+ //   queues.set(topic, [queue])
+ // }
++// function subscribe (topic, queue) {
++//   if (listeners.has(topic)) {
++//
++//   }
++//
++//   function callback (err) {
++//
++//     for (var value of queues) {
++//     }
++//   }
++//
++//   listeners.set(topic, callback)
++//   queues.set(topic, [queue])
++// }
+diff --git a/mqemitter.d.ts b/mqemitter.d.ts
+index 874de6c..673b3f9 100644
+--- a/mqemitter.d.ts
++++ b/mqemitter.d.ts
+@@ -15,8 +15,9 @@ declare namespace mqemitter {
+     current: number
+     concurrent: number
+     on(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
+-    emit(message: Message, callback?: (error?: Error) => void): void
++    once(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): this
+     removeListener(topic: string, listener: (message: Message, done: () => void) => void, callback?: () => void): void
++    removeAllListeners(callback?: () => void): void
+     close(callback: () => void): void
+   }
+ }
+diff --git a/mqemitter.js b/mqemitter.js
+index 7d556e8..b095a3b 100644
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -74,19 +74,21 @@ MQEmitter.prototype.on = function on (topic, notify, done) {
+ MQEmitter.prototype.removeListener = function removeListener (topic, notify, done) {
+   assert(topic)
+   assert(notify)
+-  const that = this
+-  setImmediate(function () {
+-    that._matcher.remove(topic, notify)
+-    if (done) {
+-      done()
+-    }
+-  })
++  
++  this._matcher.remove(topic, notify)
++  if (notify.__mqemitter_once_wrapper) {
++    this._matcher.remove(topic, notify.__mqemitter_once_wrapper)
++  }
++
++  if (done) {
++    setImmediate(done)
++  }
++
+   return this
+ }
+ 
+-MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
+-  assert(topic)
+-  this._matcher.remove(topic)
++MQEmitter.prototype.removeAllListeners = function removeAllListeners (done) {
++  this._matcher.clear()
+ 
+   if (done) {
+     setImmediate(done)
+@@ -95,22 +97,43 @@ MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
+   return this
+ }
+ 
++MQEmitter.prototype.once = function once (topic, notify, done) {
++  assert(topic)
++  assert(notify)
++
++  const that = this
++  let fired = false
++
++  function wrapped (message, cb) {
++    if (fired) {
++      return cb()
++    }
++    fired = true
++    that.removeListener(topic, wrapped)
++    notify.call(this, message, cb)
++  }
++
++  notify.__mqemitter_once_wrapper = wrapped
++
++  this.on(topic, wrapped, done)
++
++  return this
++}
++
++
++
+ MQEmitter.prototype.emit = function emit (message, cb) {
+   assert(message)
+ 
+   cb = cb || noop
+ 
+   if (this.closed) {
+-    return cb(new Error('mqemitter is closed'))
++    return cb(new Error('MQEmitter is closed'))
+   }
+ 
+   if (this.concurrency > 0 && this.current >= this.concurrency) {
+     this._messageQueue.push(message)
+     this._messageCallbacks.push(cb)
+-    if (!this._doing) {
+-      process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
+-      this._released()
+-    }
+   } else {
+     this._do(message, cb)
+   }
