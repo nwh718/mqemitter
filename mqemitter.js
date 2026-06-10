@@ -103,9 +103,6 @@ MQEmitter.prototype.emit = function emit (message, cb) {
   if (this.closed) {
     return cb(new Error('mqemitter is closed'))
   }
-
-  if (this.concurrency > 0 && this.current >= this.concurrency) {
-    this._messageQueue.push(message)
     this._messageCallbacks.push(cb)
     if (!this._doing) {
       process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
