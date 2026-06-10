@@ -1,0 +1,36 @@
+diff --git a/mqemitter.js b/mqemitter.js
+index 1234567..abcdefg 100644
+--- a/mqemitter.js
++++ b/mqemitter.js
+@@ -27,7 +27,6 @@ function MQEmitter (opts) {
+   this.concurrency = opts.concurrency || 0
+ 
+   this.current = 0
+-  this._doing = false
+   this._doing = false
+   this._matcher = new Qlobber({
+     match_empty_levels: opts.matchEmptyLevels,
+@@ -41,11 +40,9 @@ function MQEmitter (opts) {
+     const callback = that._messageCallbacks.shift()
+ 
+     if (message) {
+-    } else {
+-      that._doing = false
+       that._do(message, callback)
+     } else {
+-      that._doing = false
++      that._doing = false       // 队列为空，进入空闲状态
+     }
+   }
+ }
+@@ -96,12 +93,6 @@ MQEmitter.prototype.emit = function emit (message, cb) {
+     return cb(new Error('mqemitter is closed'))
+   }
+ 
+-    if (!this._doing) {
+-      process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
+-      this._released()
+-    }
+   if (this.concurrency > 0 && this.current >= this.concurrency) {
+     this._messageQueue.push(message)
+     this._messageCallbacks.push(cb)

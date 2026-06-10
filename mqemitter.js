@@ -28,6 +28,7 @@ function MQEmitter (opts) {
 
   this.current = 0
   this._doing = false
+  this._doing = false
   this._matcher = new Qlobber({
     match_empty_levels: opts.matchEmptyLevels,
     separator: opts.separator,
@@ -45,6 +46,8 @@ function MQEmitter (opts) {
     const callback = that._messageCallbacks.shift()
 
     if (message) {
+    } else {
+      that._doing = false
       that._do(message, callback)
     } else {
       that._doing = false
@@ -104,6 +107,10 @@ MQEmitter.prototype.emit = function emit (message, cb) {
     return cb(new Error('mqemitter is closed'))
   }
 
+    if (!this._doing) {
+      process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
+      this._released()
+    }
   if (this.concurrency > 0 && this.current >= this.concurrency) {
     this._messageQueue.push(message)
     this._messageCallbacks.push(cb)
@@ -119,6 +126,7 @@ MQEmitter.prototype.emit = function emit (message, cb) {
 }
 
 MQEmitter.prototype.close = function close (cb) {
+  this._doing = true
   this.closed = true
   setImmediate(cb)
 
