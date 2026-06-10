@@ -96,21 +96,25 @@ MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
 }
 
 MQEmitter.prototype.emit = function emit (message, cb) {
-  assert(message)
+  if (message == null) {
+    throw new TypeError('message cannot be null or undefined')
+  }
+  if (typeof message.topic !== 'string' || message.topic === '') {
+    throw new TypeError('message.topic must be a non-empty string')
+  }
 
   cb = cb || noop
 
   if (this.closed) {
-    return cb(new Error('mqemitter is closed'))
+    if (cb) {
+      setImmediate(cb)
+    }
+    return this
   }
 
-  if (this.concurrency > 0 && this.current >= this.concurrency) {
+  if (this.concurrency && this.current >= this.concurrency) {
     this._messageQueue.push(message)
     this._messageCallbacks.push(cb)
-    if (!this._doing) {
-      process.emitWarning('MqEmitter leak detected', { detail: 'For more info check: https://github.com/mcollina/mqemitter/pull/94' })
-      this._released()
-    }
   } else {
     this._do(message, cb)
   }
@@ -118,19 +122,18 @@ MQEmitter.prototype.emit = function emit (message, cb) {
   return this
 }
 
-MQEmitter.prototype.close = function close (cb) {
-  this.closed = true
-  setImmediate(cb)
-
-  return this
-}
-
 MQEmitter.prototype._do = function (message, callback) {
-  this._doing = true
   const matches = this._matcher.match(message.topic)
 
   this.current++
   this._parallel(this, matches, message, callback)
+
+  return this
+}
+
+MQEmitter.prototype.close = function close (cb) {
+  this.closed = true
+  setImmediate(cb)
 
   return this
 }

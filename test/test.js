@@ -191,4 +191,3 @@ test('removeListener inside messageHandler', t => {
   e.emit({ topic: 'hello' }, () => {
     t.assert.ok(true, 'emit callback received')
   })
-})
