@@ -71,6 +71,32 @@ MQEmitter.prototype.on = function on (topic, notify, done) {
   return this
 }
 
+MQEmitter.prototype.once = function once (topic, notify, done) {
+  assert(topic)
+  assert(notify)
+  const that = this
+  let fired = false
+
+  function wrapper (message, cb) {
+    if (fired) {
+      return cb()
+    }
+    fired = true
+    that.removeListener(topic, wrapper)
+    notify(message, cb)
+  }
+
+  wrapper._notify = notify
+
+  this._matcher.add(topic, wrapper)
+
+  if (done) {
+    setImmediate(done)
+  }
+
+  return this
+}
+
 MQEmitter.prototype.removeListener = function removeListener (topic, notify, done) {
   assert(topic)
   assert(notify)
