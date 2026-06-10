@@ -96,9 +96,15 @@ MQEmitter.prototype.removeAllListeners = function removeListener (topic, done) {
 }
 
 MQEmitter.prototype.emit = function emit (message, cb) {
-  assert(message)
-
   cb = cb || noop
+
+  if (message === null || message === undefined) {
+    return cb(new TypeError('message cannot be null or undefined'))
+  }
+
+  if (typeof message !== 'object') {
+    return cb(new TypeError('message must be an object with a topic property'))
+  }
 
   if (this.closed) {
     return cb(new Error('mqemitter is closed'))
